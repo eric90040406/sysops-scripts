@@ -1,14 +1,23 @@
-# nas/ — NAS Hardware Utilities
+# nas/
 
-Scripts for inspecting and managing NAS storage hardware.
+NAS 相關的所有 script。
 
 ---
 
-## disk_info.sh
+## Scripts
 
-Prints a table of every block device on the host: disk type, capacity, serial number, and which MD RAID array it belongs to.
+### [disk_info.sh](https://github.com/eric90040406/sysops-scripts/blob/main/nas/disk_info.sh)
 
-### Sample output
+列出所有 block device 的資訊：類型、容量、序號、所屬 MD RAID。
+
+**用法**
+
+```bash
+sudo bash disk_info.sh      # 表格輸出
+sudo bash disk_info.sh -j   # JSON 輸出
+```
+
+**輸出範例**
 
 ```
 DEVICE      TYPE  MODEL                               SIZE      SERIAL                MD
@@ -23,21 +32,14 @@ md0 : active raid5 sda[0] sdb[1]
 ...
 ```
 
-### Requirements
-
-| Package         | Purpose                            |
-|-----------------|------------------------------------|
-| `smartmontools` | Read serial number and disk model  |
-| `mdadm`         | Parse MD RAID membership           |
-| `util-linux`    | `lsblk` — capacity and device list |
+**相依套件**
 
 ```bash
 sudo apt install smartmontools mdadm util-linux
 ```
 
-### Usage
-
-```bash
-sudo bash disk_info.sh        # plain table + /proc/mdstat
-sudo bash disk_info.sh -j     # JSON output
-```
+| 套件 | 用途 |
+|------|------|
+| `smartmontools` | 讀取序號與型號 |
+| `mdadm` | 解析 MD RAID 成員 |
+| `util-linux` | `lsblk` 取得容量與裝置清單 |
