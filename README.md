@@ -1,25 +1,22 @@
 # sysops-scripts
 
-A personal collection of system administration scripts, organized by category.
+A personal collection of system administration scripts for NAS hardware inspection, storage management, and automated testing.
 
-```
-sysops-scripts/
-└── nas_tool/
-    ├── disk_info/              # Disk inventory: type, capacity, serial, MD membership
-    ├── check_stress/           # Log scanner: panic / DENIED / core / segfault
-    ├── pool_lifecycle_test/    # Automated pool+volume create/delete test
-    ├── hotswap_test/           # Disk hot-swap simulation and rebuild verification
-    └── cheatsheet.md           # Quick reference for common NAS commands
-```
+## NAS Tool
 
-## Categories
+Scripts for Synology DSM / Linux MD RAID environments. Most require `root`.
 
-| Folder | Description | Link |
-|--------|-------------|------|
-| `nas_tool/` | NAS hardware inspection and storage automation | [View on GitHub](https://github.com/eric90040406/sysops-scripts/tree/main/nas_tool) |
+| Script | What it does | Usage |
+|--------|-------------|-------|
+| [disk_info](https://github.com/eric90040406/sysops-scripts/tree/main/nas_tool/disk_info) | List all disks: type, capacity, serial number, MD RAID membership | `sudo bash disk_info.sh [-j]` |
+| [check_stress](https://github.com/eric90040406/sysops-scripts/tree/main/nas_tool/check_stress) | Scan system logs for panic, DENIED, core dumps, segfault — outputs PASS/FAIL | `sudo bash check_stress.sh [-o file]` |
+| [pool_lifecycle_test](https://github.com/eric90040406/sysops-scripts/tree/main/nas_tool/pool_lifecycle_test) | Create pool+volume, write and verify data (MD5), tear down — repeat N times | `sudo bash pool_lifecycle_test.sh -d <disk> [-n <iter>] [-s <mb>]` |
+| [hotswap_test](https://github.com/eric90040406/sysops-scripts/tree/main/nas_tool/hotswap_test) | Deactivate a disk, confirm degraded state, re-activate, verify rebuild and mismatch_cnt | `sudo bash hotswap_test.sh -m <md> -d <disk> [-t <sec>]` |
+
+[Cheatsheet — common NAS commands](https://github.com/eric90040406/sysops-scripts/blob/main/nas_tool/cheatsheet.md)
 
 ## Requirements
 
 - OS: Linux (Debian / Ubuntu) / Synology DSM
 - Shell: Bash 4.0+
-- Most scripts require `root`
+- Dependencies: `smartctl`, `lsblk`, `mdadm`, `synowebapi`, `synostgdisk`
