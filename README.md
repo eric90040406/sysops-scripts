@@ -23,6 +23,6 @@ sysops-scripts/
 
 ## 環境需求
 
-- OS: Linux (Debian / Ubuntu)
+- OS: Linux (Ubuntu)
 - Shell: Bash 4.0+
 - 大部分 script 需要 `root` 權限
