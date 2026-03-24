@@ -2,11 +2,15 @@
 
 NAS 相關的所有 script。
 
+```
+nas/
+├── disk_info.sh    # 查詢硬碟容量、序號、所屬 MD RAID
+└── ...
+```
+
 ---
 
-## Scripts
-
-### [disk_info.sh](https://github.com/eric90040406/sysops-scripts/blob/main/nas/disk_info.sh)
+## disk_info.sh
 
 列出所有 block device 的資訊：類型、容量、序號、所屬 MD RAID。
 

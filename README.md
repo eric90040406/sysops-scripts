@@ -4,11 +4,20 @@
 
 ---
 
-## 資料夾
+## 結構
+
+```
+sysops-scripts/
+└── nas/
+    ├── disk_info.sh    # 查詢硬碟容量、序號、所屬 MD RAID
+    └── ...
+```
+
+各資料夾內有獨立的 README 說明。
 
 | 資料夾 | 說明 | 連結 |
 |--------|------|------|
-| `nas/` | NAS 相關的所有 script，包含硬體查詢、磁碟管理等 | [前往 GitHub](https://github.com/eric90040406/sysops-scripts/tree/main/nas) |
+| `nas/` | NAS 相關 script | [前往 GitHub](https://github.com/eric90040406/sysops-scripts/tree/main/nas) |
 
 ---
 
