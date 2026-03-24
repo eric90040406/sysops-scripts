@@ -8,16 +8,16 @@
 
 ```
 sysops-scripts/
-└── nas/
-    ├── disk_info.sh    # 查詢硬碟容量、序號、所屬 MD RAID
-    └── ...
+└── nas_tool/
+    ├── disk_info.sh      # 查詢硬碟容量、序號、所屬 MD RAID
+    ├── check_stress.sh   # 掃描系統 log（panic / DENIED / core / segfault）
+    ├── raid_replace.sh   # MD RAID 換硬碟流程
+    └── cheatsheet.md     # 常用指令參考
 ```
-
-各資料夾內有獨立的 README 說明。
 
 | 資料夾 | 說明 | 連結 |
 |--------|------|------|
-| `nas/` | NAS 相關 script | [前往 GitHub](https://github.com/eric90040406/sysops-scripts/tree/main/nas) |
+| `nas_tool/` | NAS 相關 script | [前往 GitHub](https://github.com/eric90040406/sysops-scripts/tree/main/nas_tool) |
 
 ---
 
