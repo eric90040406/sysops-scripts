@@ -1,28 +1,23 @@
 # sysops-scripts
 
-個人用的系統管理 script 集合，依功能分資料夾存放。
-
----
-
-## 結構
+A personal collection of system administration scripts, organized by category.
 
 ```
 sysops-scripts/
 └── nas_tool/
-    ├── disk_info.sh      # 查詢硬碟容量、序號、所屬 MD RAID
-    ├── check_stress.sh   # 掃描系統 log（panic / DENIED / core / segfault）
-    ├── raid_replace.sh   # MD RAID 換硬碟流程
-    └── cheatsheet.md     # 常用指令參考
+    ├── disk_info/          # Disk inventory: type, capacity, serial, MD membership
+    ├── check_stress/       # Log scanner: panic / DENIED / core / segfault
+    └── cheatsheet.md       # Quick reference for common NAS commands
 ```
 
-| 資料夾 | 說明 | 連結 |
-|--------|------|------|
-| `nas_tool/` | NAS 相關 script | [前往 GitHub](https://github.com/eric90040406/sysops-scripts/tree/main/nas_tool) |
+## Categories
 
----
+| Folder | Description | Link |
+|--------|-------------|------|
+| `nas_tool/` | NAS hardware and storage scripts | [View on GitHub](https://github.com/eric90040406/sysops-scripts/tree/main/nas_tool) |
 
-## 環境需求
+## Requirements
 
-- OS: Linux (Ubuntu)
+- OS: Linux (Debian / Ubuntu)
 - Shell: Bash 4.0+
-- 大部分 script 需要 `root` 權限
+- Most scripts require `root`
