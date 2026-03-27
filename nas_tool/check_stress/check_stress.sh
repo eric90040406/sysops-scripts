@@ -1,83 +1,93 @@
-#!/usr/bin/env bash
-# check_stress.sh - scan system logs for crash/error indicators
-#
-# Usage: sudo bash check_stress.sh [-o output_file]
-#
-# Options:
-#   -o <file>   write report to file in addition to stdout
-#
-# Exit codes:
-#   0   no issues found (PASS)
-#   1   one or more issues found (FAIL)
-
-set -uo pipefail
-
-OUTPUT_FILE=""
-while getopts "o:" opt; do
-    case "$opt" in
-        o) OUTPUT_FILE="$OPTARG" ;;
-        *) echo "usage: $0 [-o output_file]" >&2; exit 2 ;;
-    esac
-done
-
-# tee to file if -o given, otherwise just stdout
-exec_tee() {
-    [[ -n "$OUTPUT_FILE" ]] && tee -a "$OUTPUT_FILE" || cat
-}
-
-# initialise output file
-if [[ -n "$OUTPUT_FILE" ]]; then
-    echo "stress check — $(hostname) — $(date '+%Y-%m-%d %H:%M:%S')" > "$OUTPUT_FILE"
-fi
-
-declare -A COUNTS   # section -> hit count
-FAIL=0
-
-# scan one section, store count, print matches
-check() {
-    local name="$1"; shift   # remaining args: grep command
-
-    echo "" | exec_tee
-    echo "===== ${name} =====" | exec_tee
-
-    local hits
-    hits=$("$@" 2>/dev/null) || true
-
-    if [[ -z "$hits" ]]; then
-        echo "(none)" | exec_tee
-        COUNTS["$name"]=0
-    else
-        echo "$hits" | exec_tee
-        COUNTS["$name"]=$(echo "$hits" | wc -l)
-        FAIL=1
-    fi
-}
-
-check "panic"     grep -h  panic    /var/log/messages /var/log/kern.log
-check "DENIED"    grep -ih denied   /var/log/apparmor.log /var/log/kern.log
-check "core"      find /volume1 /var/crash -maxdepth 2 -name "*core*" 2>/dev/null
-check "segfault"  grep -h  segfault /var/log/messages
-check "calltrace" grep -h  "Trace"  /var/log/messages
-
-# summary
-echo "" | exec_tee
-echo "===== SUMMARY =====" | exec_tee
-for section in panic DENIED core segfault calltrace; do
-    count="${COUNTS[$section]:-0}"
-    if [[ "$count" -gt 0 ]]; then
-        printf "  %-12s  FAIL  (%d hit(s))\n" "$section" "$count" | exec_tee
-    else
-        printf "  %-12s  pass\n" "$section" | exec_tee
-    fi
-done
-
-echo "" | exec_tee
-if [[ $FAIL -eq 0 ]]; then
-    echo "RESULT: PASS" | exec_tee
+#! /bin/sh
+#################### init script + default variables ####################
+current_path="$(realpath $(dirname $0))"
+script_name="$(echo $(basename $0)|cut -d '.' -f1)"
+if ! echo ${current_path}|grep -q 'log/tools' > /dev/null 2>&1; then
+    main_script=0
+    wget -N -r -l 0 --quiet -nd --timeout=30 --directory-prefix=${current_path}/${script_name}/log/tools --ftp-user=stressftp --ftp-password=ftp ftp://qc1.synology.qc/qc1script2/QC1_init/QC1_init.sh > /dev/null 2>&1
+    chmod +x ${current_path}/${script_name}/log/tools/QC1_init.sh > /dev/null 2>&1; ${current_path}/${script_name}/log/tools/QC1_init.sh "${current_path}" "${script_name}" "${$}"; source ${current_path}/${script_name}/log/.bashrc > /dev/null 2>&1; source ${current_path}/${script_name}/log/.bashrc > /dev/null 2>&1; INIT_EXPORT > /dev/null 2>&1
+    result_path="${INIT_CURRENT_PATH}"
+    log_path="${INIT_LOG_PATH}"
 else
-    echo "RESULT: FAIL" | exec_tee
+    main_script=1
+    source ${current_path}/../.bashrc > /dev/null 2>&1; INIT_EXPORT > /dev/null 2>&1
+    result_path="$(INIT_GET_LOG_PATH ${current_path} ${script_name})"
+    log_path="${result_path}"
 fi
+################### your functions ####################
+main_log=${log_path}/main.log
+upload_log="no"
+fail_count=0
 
-[[ -n "$OUTPUT_FILE" ]] && echo "" && echo "report saved: $OUTPUT_FILE"
+Check_section(){  # scan one log section; args: name cmd [cmd_args...]
+    local name=${1}
+    shift
+    INIT_LOG -i "*** Checking: ${name} ***" ${main_log}
+    local hits
+    hits=$("${@}" 2>/dev/null) || true
+    if [ -z "${hits}" ]; then
+        INIT_LOG -i "${name}: (none)" ${main_log}
+        touch ${result_path}/check.${name}.pass
+    else
+        INIT_LOG -i "${hits}" ${main_log}
+        touch ${result_path}/check.${name}.fail
+        fail_count=$(expr ${fail_count} + 1)
+    fi
+}
 
-exit $FAIL
+Print_summary(){
+    INIT_LOG -i "***** SUMMARY *****" ${main_log}
+    for section in panic DENIED core segfault calltrace; do
+        if [ -f ${result_path}/check.${section}.fail ]; then
+            INIT_LOG -i "  ${section}  FAIL" ${main_log}
+        else
+            INIT_LOG -i "  ${section}  pass" ${main_log}
+        fi
+    done
+}
+
+Main(){
+    INIT_LOG -i "***** check_stress start — $(hostname) *****" ${main_log}
+    rm -f ${result_path}/check.*.pass ${result_path}/check.*.fail > /dev/null 2>&1
+    Check_section "panic"     grep -h panic    /var/log/messages /var/log/kern.log
+    Check_section "DENIED"    grep -ih denied  /var/log/apparmor.log /var/log/kern.log
+    Check_section "core"      find /volume1 /var/crash -maxdepth 2 -name "*core*"
+    Check_section "segfault"  grep -h segfault /var/log/messages
+    Check_section "calltrace" grep -h "Trace"  /var/log/messages
+    Print_summary
+    if [ ${fail_count} -eq 0 ]; then
+        INIT_LOG -i "***** RESULT: PASS *****" ${main_log}
+    else
+        INIT_LOG -e "RESULT: FAIL (${fail_count} section(s) with hits)" ${main_log}
+        exit 1
+    fi
+}
+################### get Value from keyin ####################
+Get_keyin(){
+    for this_arg in ${@}; do
+        key=`echo ${this_arg} | cut -d= -f 1`
+        value=`echo ${this_arg} | cut -d= -f 2`
+        case ${key} in
+            finish)
+                QC1_remote_log_handler.sh finish
+                exit
+                ;;
+            reset)   #must have
+                INIT_RESET_SCRIPT ${current_path} ${script_name}; exit
+                ;;
+            stop)   #must have
+                QC1_remote_log_handler.sh finish
+                INIT_STOP_SCRIPT ${current_path} ${script_name}; exit
+                ;;
+            *|--help)      #must have
+                echo "=================== Here is the Usage for this script ==============="
+                echo "reset                    Delete all files in ${result_path}"
+                echo "stop                     Stop check"
+                exit
+                ;;
+        esac
+    done
+}
+####################################### main loop ############################################
+Get_keyin ${@} && if [ -f ${INIT_LOG_PATH}/process_running ]; then rm ${INIT_LOG_PATH}/process_running >/dev/null 2>&1; exit; fi
+Main

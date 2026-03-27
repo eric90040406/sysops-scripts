@@ -1,70 +1,74 @@
-#!/usr/bin/env bash
-# pool_lifecycle_test.sh
-#
-# Creates a pool+volume, writes random data, verifies MD5 readback,
-# then tears everything down. Repeats N times to catch intermittent issues.
-#
-# Usage: sudo bash pool_lifecycle_test.sh -d <disk> [-n <iterations>] [-s <size_mb>]
-# Example: sudo bash pool_lifecycle_test.sh -d sata4 -n 5 -s 512
+#! /bin/sh
+#################### init script + default variables ####################
+current_path="$(realpath $(dirname $0))"
+script_name="$(echo $(basename $0)|cut -d '.' -f1)"
+if ! echo ${current_path}|grep -q 'log/tools' > /dev/null 2>&1; then
+    main_script=0
+    wget -N -r -l 0 --quiet -nd --timeout=30 --directory-prefix=${current_path}/${script_name}/log/tools --ftp-user=stressftp --ftp-password=ftp ftp://qc1.synology.qc/qc1script2/QC1_init/QC1_init.sh > /dev/null 2>&1
+    chmod +x ${current_path}/${script_name}/log/tools/QC1_init.sh > /dev/null 2>&1; ${current_path}/${script_name}/log/tools/QC1_init.sh "${current_path}" "${script_name}" "${$}"; source ${current_path}/${script_name}/log/.bashrc > /dev/null 2>&1; source ${current_path}/${script_name}/log/.bashrc > /dev/null 2>&1; INIT_EXPORT > /dev/null 2>&1
+    result_path="${INIT_CURRENT_PATH}"
+    log_path="${INIT_LOG_PATH}"
+else
+    main_script=1
+    source ${current_path}/../.bashrc > /dev/null 2>&1; INIT_EXPORT > /dev/null 2>&1
+    result_path="$(INIT_GET_LOG_PATH ${current_path} ${script_name})"
+    log_path="${result_path}"
+fi
+################### your functions ####################
+main_log=${log_path}/main.log
+upload_log="no"
+disk_target=""
+max_iterations=1
+size_mb=512
+pass_count=0
+fail_count=0
 
-set -uo pipefail
+Counter_control(){
+    rm ${result_path}/count.${count} > /dev/null 2>&1
+    count=$(expr ${count} + 1)
+    INIT_LOG -i "======== Starting round [${count}] test ========" ${main_log}
+    touch ${result_path}/count.${count}; chmod 777 ${result_path}/count.${count}
+}
 
-DISK=""
-ITERATIONS=1
-SIZE_MB=512
-PASS=0
-FAIL=0
-
-usage() { echo "usage: $0 -d <disk> [-n <iterations>] [-s <size_mb>]" >&2; exit 1; }
-
-while getopts "d:n:s:" opt; do
-    case "$opt" in
-        d) DISK="$OPTARG" ;;
-        n) ITERATIONS="$OPTARG" ;;
-        s) SIZE_MB="$OPTARG" ;;
-        *) usage ;;
-    esac
-done
-
-[[ -z "$DISK" ]] && usage
-[[ $EUID -ne 0 ]] && { echo "run as root" >&2; exit 1; }
-
-SIZE_KB=$(( SIZE_MB * 1024 ))
-
-log()  { echo "[$(date '+%H:%M:%S')] $*"; }
-pass() { log "PASS: $*"; (( PASS++ )); }
-fail() { log "FAIL: $*"; (( FAIL++ )); }
-
-# poll until a /volumeN appears in mount output, or timeout
-wait_for_volume() {
-    local timeout="${1:-120}" elapsed=0
-    while (( elapsed < timeout )); do
-        mount | grep -qP '/volume\d+' && return 0
-        sleep 3; (( elapsed += 3 ))
+Wait_for_volume(){  # poll until /volumeN appears in mount; args: timeout_sec
+    local timeout=${1}
+    local elapsed=0
+    while [ ${elapsed} -lt ${timeout} ]; do
+        if [ "$(mount | grep -c '/volume[0-9]')" -ge 1 ]; then
+            return 0
+        fi
+        sleep 3
+        elapsed=$(expr ${elapsed} + 3)
     done
     return 1
 }
 
-# poll until no /volumeN in mount output, or timeout
-wait_volume_gone() {
-    local vol="$1" timeout="${2:-60}" elapsed=0
-    while (( elapsed < timeout )); do
-        mount | grep -q "$vol" || return 0
-        sleep 3; (( elapsed += 3 ))
+Wait_volume_gone(){  # poll until vol no longer in mount; args: vol timeout_sec
+    local vol=${1}
+    local timeout=${2}
+    local elapsed=0
+    while [ ${elapsed} -lt ${timeout} ]; do
+        if [ "$(mount | grep -c "${vol}")" -eq 0 ]; then
+            return 0
+        fi
+        sleep 3
+        elapsed=$(expr ${elapsed} + 3)
     done
     return 1
 }
 
-create_pool_and_volume() {
+Create_pool_and_volume(){
+    local size_kb
+    size_kb=$(expr ${size_mb} \* 1024)
     synowebapi --exec \
-        allocate_size="\"${SIZE_KB}\"" \
+        allocate_size="\"${size_kb}\"" \
         api="SYNO.Storage.CGI.Volume" \
         atime_opt="\"relatime\"" \
         blocking="false" \
         desc="\"\"" \
         device_type="\"basic\"" \
-        diskGroups="[{\"isNew\":true,\"raidPath\":\"new_raid\",\"disks\":[\"${DISK}\"]}]" \
-        disk_id="[\"${DISK}\"]" \
+        diskGroups="[{\"isNew\":true,\"raidPath\":\"new_raid\",\"disks\":[\"${disk_target}\"]}]" \
+        disk_id="[\"${disk_target}\"]" \
         enable_dedupe="false" \
         force="false" \
         fs_type="\"btrfs\"" \
@@ -75,105 +79,150 @@ create_pool_and_volume() {
         pool_path="\"\"" \
         spare_disk_count="\"0\"" \
         version="1" \
-        vol_desc="\"\"" > /dev/null
+        vol_desc="\"\"" > /dev/null 2>&1
 }
 
-delete_volume() {
-    local vol="$1"
+Delete_volume(){
+    local vol=${1}
     synowebapi --exec \
         api="SYNO.Storage.CGI.Volume" \
         method="delete" \
         version="1" \
         vol_path="\"${vol}\"" \
-        force="false" > /dev/null
+        force="false" > /dev/null 2>&1
 }
 
-delete_pool() {
-    local pool="$1"
+Delete_pool(){
+    local pool=${1}
     synowebapi --exec \
         api="SYNO.Storage.CGI.Pool" \
         method="delete" \
         version="1" \
         pool_path="\"${pool}\"" \
-        force="false" > /dev/null
+        force="false" > /dev/null 2>&1
 }
 
-get_pool_path() {
+Get_pool_path(){
     synowebapi --exec api="SYNO.Storage.CGI.Pool" method="list" version="1" 2>/dev/null \
-        | grep -oP '"pool_path":"\K[^"]+' | head -1
+        | awk -F'"' '/"pool_path"/ { print $4; exit }'
 }
 
-run_iteration() {
-    local iter="$1"
-    log "--- iteration ${iter}/${ITERATIONS} ---"
-
-    # create
-    log "creating pool+volume on ${DISK} (${SIZE_MB}MB)..."
-    if ! create_pool_and_volume; then
-        fail "iter ${iter}: synowebapi create failed"
+Run_iteration(){
+    local iter=${1}
+    INIT_LOG -i "*** iteration ${iter}/${max_iterations} ***" ${main_log}
+    INIT_LOG -i "*** creating pool+volume on ${disk_target} (${size_mb}MB) ***" ${main_log}
+    if ! Create_pool_and_volume; then
+        INIT_LOG -e "FAIL iter ${iter}: synowebapi create failed" ${main_log}
+        fail_count=$(expr ${fail_count} + 1)
         return
     fi
-
-    if ! wait_for_volume 120; then
-        fail "iter ${iter}: volume did not mount within 120s"
+    if ! Wait_for_volume 120; then
+        INIT_LOG -e "FAIL iter ${iter}: volume did not mount within 120s" ${main_log}
+        fail_count=$(expr ${fail_count} + 1)
         return
     fi
-
     local vol
-    vol=$(mount | grep -oP '/volume\d+' | tail -1)
-    log "volume mounted at ${vol}"
-
-    # write + verify MD5
-    local testfile="${vol}/lifecycle_test_${iter}.dat"
-    log "writing ${SIZE_MB}MB of random data..."
-    dd if=/dev/urandom of="$testfile" bs=1M count="$SIZE_MB" status=none
-
+    vol=$(mount | grep -o '/volume[0-9]*' | tail -1)
+    INIT_LOG -i "*** volume mounted at ${vol} ***" ${main_log}
+    local testfile
+    testfile="${vol}/lifecycle_test_${iter}.dat"
+    INIT_LOG -i "*** writing ${size_mb}MB of random data ***" ${main_log}
+    dd if=/dev/urandom of="${testfile}" bs=1M count="${size_mb}" > /dev/null 2>&1
     local md5_write md5_read
-    md5_write=$(md5sum "$testfile" | awk '{print $1}')
-    log "MD5 (write): ${md5_write}"
-    md5_read=$(md5sum "$testfile" | awk '{print $1}')
-    log "MD5 (read) : ${md5_read}"
-
-    rm -f "$testfile"
-
-    if [[ "$md5_write" == "$md5_read" ]]; then
-        pass "iter ${iter}: MD5 match"
+    md5_write=$(md5sum "${testfile}" | awk '{print $1}')
+    INIT_LOG -i "*** MD5 (write): ${md5_write} ***" ${main_log}
+    md5_read=$(md5sum "${testfile}" | awk '{print $1}')
+    INIT_LOG -i "*** MD5 (read) : ${md5_read} ***" ${main_log}
+    rm -f "${testfile}" > /dev/null 2>&1
+    if [ "${md5_write}" = "${md5_read}" ]; then
+        INIT_LOG -i "*** PASS iter ${iter}: MD5 match ***" ${main_log}
+        pass_count=$(expr ${pass_count} + 1)
     else
-        fail "iter ${iter}: MD5 mismatch"
+        INIT_LOG -e "FAIL iter ${iter}: MD5 mismatch" ${main_log}
+        fail_count=$(expr ${fail_count} + 1)
     fi
-
-    # delete volume
-    log "deleting volume ${vol}..."
-    delete_volume "$vol"
-
-    # delete pool
+    INIT_LOG -i "*** deleting volume ${vol} ***" ${main_log}
+    Delete_volume "${vol}"
     local pool
-    pool=$(get_pool_path)
-    if [[ -n "$pool" ]]; then
-        log "deleting pool ${pool}..."
-        delete_pool "$pool"
+    pool=$(Get_pool_path)
+    if [ -n "${pool}" ]; then
+        INIT_LOG -i "*** deleting pool ${pool} ***" ${main_log}
+        Delete_pool "${pool}"
     else
-        log "WARN: could not find pool to delete"
+        INIT_LOG -i "*** WARN: could not find pool to delete ***" ${main_log}
     fi
-
-    # verify cleanup
-    if wait_volume_gone "$vol" 60; then
-        pass "iter ${iter}: cleanup verified"
+    if Wait_volume_gone "${vol}" 60; then
+        INIT_LOG -i "*** PASS iter ${iter}: cleanup verified ***" ${main_log}
+        pass_count=$(expr ${pass_count} + 1)
     else
-        fail "iter ${iter}: volume still mounted after deletion"
+        INIT_LOG -e "FAIL iter ${iter}: volume still mounted after deletion" ${main_log}
+        fail_count=$(expr ${fail_count} + 1)
     fi
 }
 
-# ── main ─────────────────────────────────────────────────────────────────────
-for (( i=1; i<=ITERATIONS; i++ )); do
-    run_iteration "$i"
-done
-
-echo ""
-echo "===== SUMMARY ====="
-printf "  %-12s %s\n" "iterations:" "$ITERATIONS"
-printf "  %-12s %s\n" "pass:"       "$PASS"
-printf "  %-12s %s\n" "fail:"       "$FAIL"
-echo ""
-[[ $FAIL -eq 0 ]] && echo "RESULT: PASS" || echo "RESULT: FAIL"
-[[ $FAIL -eq 0 ]]
+Main(){
+    INIT_LOG -i "***** pool_lifecycle_test start — disk: ${disk_target} *****" ${main_log}
+    if [ "$(id -u)" -ne 0 ]; then
+        INIT_LOG -e "ERROR: must run as root" ${main_log}
+        exit 1
+    fi
+    for i in $(seq 1 ${max_iterations}); do
+        Counter_control
+        Run_iteration ${i}
+    done
+    INIT_LOG -i "***** SUMMARY *****" ${main_log}
+    INIT_LOG -i "*** iterations : ${max_iterations} ***" ${main_log}
+    INIT_LOG -i "*** pass       : ${pass_count} ***" ${main_log}
+    INIT_LOG -i "*** fail       : ${fail_count} ***" ${main_log}
+    if [ ${fail_count} -eq 0 ]; then
+        INIT_LOG -i "***** RESULT: PASS *****" ${main_log}
+    else
+        INIT_LOG -e "RESULT: FAIL (${fail_count} failure(s))" ${main_log}
+        exit 1
+    fi
+}
+################### get Value from keyin ####################
+Get_keyin(){
+    for this_arg in ${@}; do
+        key=`echo ${this_arg} | cut -d= -f 1`
+        value=`echo ${this_arg} | cut -d= -f 2`
+        case ${key} in
+            --disk|-d)
+                disk_target=${value}
+                ;;
+            --count|-n)
+                max_iterations=${value}
+                ;;
+            --size|-s)
+                size_mb=${value}
+                ;;
+            finish)
+                QC1_remote_log_handler.sh finish
+                exit
+                ;;
+            reset)   #must have
+                INIT_RESET_SCRIPT ${current_path} ${script_name}; exit
+                ;;
+            stop)   #must have
+                QC1_remote_log_handler.sh finish
+                INIT_STOP_SCRIPT ${current_path} ${script_name}; exit
+                ;;
+            *|--help)      #must have
+                echo "=================== Here is the Usage for this script ==============="
+                echo "reset                    Delete all files in ${result_path}"
+                echo "stop                     Stop test"
+                echo "--disk=<name>            Disk device name, e.g. sata4 (required)"
+                echo "--count=N                Number of iterations (default: ${max_iterations})"
+                echo "--size=N                 Volume size in MB (default: ${size_mb})"
+                exit
+                ;;
+        esac
+    done
+    if [ -z "${disk_target}" ]; then
+        INIT_LOG -e "ERROR: --disk is required" ${main_log}
+        exit 1
+    fi
+}
+####################################### main loop ############################################
+Get_keyin ${@} && if [ -f ${INIT_LOG_PATH}/process_running ]; then rm ${INIT_LOG_PATH}/process_running >/dev/null 2>&1; exit; fi
+Main
